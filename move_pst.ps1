@@ -41,11 +41,9 @@ function unmount-pst {
 
     # Close Outlook object    
     Stop-Process -name "outlook" -Verbose -ErrorAction SilentlyContinue
-    Stop-Process -Name "lync" -Verbose -ErrorAction SilentlyContinue
-    #Remove-Variable Outlook | Out-Null
-
+    
     # Close Windows Search Indexer process
-    # need to write
+    # ????????????????????????????????????
 
 return $MountedPST_StringArray}
 
@@ -69,8 +67,8 @@ function copy-pst {
     }
 
     Write-Host "Closing Outlook and Skype if not closed in previous function"
+    # (get-process outlook).CloseMainWindow() to be tested --
     Stop-Process -name "outlook" -Verbose -ErrorAction SilentlyContinue
-    Stop-Process -Name "lync" -Verbose -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
 
     [String[]]$NewPSTPath = @()
