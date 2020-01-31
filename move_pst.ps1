@@ -8,8 +8,8 @@ if (!(Test-Path -Path $NewPSTFolder)) {
 
 # log paths
 $LogPathMountedPST = "$NewPSTFolder\log_MountedPST.txt"
-#$LogPathCopiedPST = "$NewPSTFolder\log_CopiedPST.txt"
-#$LogRemountPST = "$NewPSTFolder\log_RemountPst.txt"
+$LogPathCopiedPST = "$NewPSTFolder\log_CopiedPST.txt"
+$LogRemountPST = "$NewPSTFolder\log_RemountPst.txt"
 $LogPath = "$NewPSTFolder\log.log"
 
 # find PST and unmount it
@@ -20,7 +20,7 @@ function unmount-pst {
 
     write-host "Unmounted PST ran on $(Get-Date)" 
     if ($MountedPST -ne $null) {
-        #debug
+        # log action
         $MountedPST | Select-Object -Property FilePath | Out-File -FilePath $LogPathMountedPST -Force -Append
         
         $MountedPST_StringArray = @()
@@ -29,28 +29,66 @@ function unmount-pst {
         }
     }
     else {
-        write-host "No PST files mounted" 
+        write-host "No PST files mounted for this user" 
     }
 
     foreach ($PST in $MountedPST){
-        #Unmount PST
+        # Unmount PST
         $PSTRoot = $PST.GetRootFolder()
         $PSTFolder = $namespace.Folders.Item($PSTRoot.Name)
         $namespace.GetType().InvokeMember('RemoveStore',[System.Reflection.BindingFlags]::InvokeMethod,$null,$namespace,($PSTFolder)) | Out-Null
     }  
 
-    #Close Outlook    
-    Stop-Process -name "Outlook"
-    Remove-Variable Outlook | Out-Null
+    # Close Outlook object    
+    Stop-Process -name "outlook" -Verbose -ErrorAction SilentlyContinue
+    Stop-Process -Name "lync" -Verbose -ErrorAction SilentlyContinue
+    #Remove-Variable Outlook | Out-Null
 
-    #Close Windows Search Indexer process
-
+    # Close Windows Search Indexer process
+    # need to write
 
 return $MountedPST_StringArray}
 
 
 # copy PST to new location
+function copy-pst {
+    [CmdletBinding()] # enable all the def params
+    Param(
+        [Parameter(Mandatory=$true,
+            ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true,
+            Position=0)]
+        [String[]]$PSTs
+    )
 
+    write-host "Copying PST ran on $(Get-Date)"
+
+    if (!($PSTs.count -gt 0)) {
+        write-host "0 PST were passed as arguements to move"
+        return
+    }
+
+    Write-Host "Closing Outlook and Skype if not closed in previous function"
+    Stop-Process -name "outlook" -Verbose -ErrorAction SilentlyContinue
+    Stop-Process -Name "lync" -Verbose -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+
+    [String[]]$NewPSTPath = @()
+    foreach ($PST in $PSTs){
+        #Move PST
+        $NewPath = "$NewPSTLocation\$(Split-Path -Path $PST -Leaf)"
+        $NewPSTPath += $NewPath
+        if ($PST -eq $NewPath) {
+            write-host "Source: $PST and Destionation: $NewPath match. Not copying."            
+        }
+        else {
+            write-host "Copying from $PST to $NewPath"
+            Copy-Item -Path $PST -Destination $NewPath -Verbose -Force
+        }
+    }
+    
+    return $NewPSTPath
+}
 
 
 # mount PST to match new location
@@ -61,13 +99,13 @@ function mount-pst {
             ValueFromPipeline=$true,
             ValueFromPipelineByPropertyName=$true,
             Position=0)]
-        [String[]]$PSTs
+        [String[]]$MountPSTs
     )
 
     $Outlook = new-object -com outlook.application 
     $Namespace = $Outlook.getNamespace("MAPI")
 
-    foreach ($PST in $PSTs){
+    foreach ($PST in $MountPSTs){
         #Remount PST
         write-host "Mounting PST: $Pst"
         $namespace.AddStore($PST)
@@ -78,8 +116,14 @@ function mount-pst {
 
 # runbook
 Start-Transcript -Path $LogPath -Append
-    $Temp = unmount-pst
-    $Temp | Out-File -FilePath $LogPathMountedPST -Force
-    
- 
+    $Unmount = unmount-pst
+    $Unmount | Out-File -FilePath $LogPathMountedPST -Force
+
+    $CopyPath = copy-pst -PSTs $Unmount
+    $CopyPath | Out-File -FilePath $LogPathCopiedPST -Force 
+
+    mount-pst -MountPSTs $CopyPath
+
+    write-host "Stopping Outlook and returning session to user"
+    Stop-Process -name "outlook" -Verbose -ErrorAction SilentlyContinue
 Stop-Transcript
